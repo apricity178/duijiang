@@ -16,6 +16,13 @@ const TRASH_DAYS = 7;
 const QR_SIZE    = 5; // qrcode-generator module size (0=auto)
 const QR_EC      = 'M'; // Error correction level: L/M/Q/H
 
+// ── Hardcoded Gitee Config (所有入口自动连接，无需用户配置) ──
+const BUILTIN_CFG = {
+  owner: 'ad-deficiency-infant-calcium',
+  repo:  'duijiang',
+  token: '5bd3caacd8d17ef3544f928d231e2e8a'
+};
+
 // ── State ────────────────────────────────────────────────
 let cfg = null;          // { owner, repo, token }
 let qrList   = [];       // active qr codes
@@ -251,6 +258,7 @@ const btnRandom        = document.getElementById('btn-random');
 const btnDelete        = document.getElementById('btn-delete-used');
 const filterBtns       = document.querySelectorAll('.filter-btn');
 
+// Setup panel elements (removed in auto-connect mode, guarded with null checks)
 const setupSection     = document.getElementById('setup-section');
 const inputOwner       = document.getElementById('input-owner');
 const inputRepo        = document.getElementById('input-repo');
@@ -320,7 +328,8 @@ function renderCurrentTab() {
 
 // ── UI State ─────────────────────────────────────────────
 function showConnected() {
-  setupSection.style.display = 'none';
+  const setup = document.getElementById('setup-section');
+  if (setup) setup.style.display = 'none';
   connectedBar.classList.remove('hidden');
   connectedRepoName.textContent = `${cfg.owner}/${cfg.repo}`;
 }
@@ -334,8 +343,8 @@ function showSetup() {
   }
 }
 
-// ── Connect Flow ─────────────────────────────────────────
-btnConnect.addEventListener('click', async () => {
+// ── Connect Flow (auto-connect mode, guarded) ────────────
+if (btnConnect) btnConnect.addEventListener('click', async () => {
   const owner = inputOwner.value.trim();
   const repo  = inputRepo.value.trim();
   const token = inputToken.value.trim();
@@ -368,7 +377,7 @@ btnConnect.addEventListener('click', async () => {
   }
 });
 
-btnCreateRepo.addEventListener('click', async () => {
+if (btnCreateRepo) btnCreateRepo.addEventListener('click', async () => {
   const token = inputToken.value.trim();
   const repoName = inputRepo.value.trim() || 'my-qrcodes';
   if (!token) { showToast('请先填写 Token', 'warn'); return; }
@@ -407,7 +416,7 @@ btnCreateRepo.addEventListener('click', async () => {
   }
 });
 
-btnDisconnect.addEventListener('click', async () => {
+if (btnDisconnect) btnDisconnect.addEventListener('click', async () => {
   const ok = await showConfirm('🔌', '断开 Gitee 连接', '数据仍保留在 Gitee 仓库。', '确认断开');
   if (!ok) return;
   clearConfig(); qrList = []; trashList = [];
@@ -867,6 +876,7 @@ function getFiltered() {
 }
 
 // ── Init ──────────────────────────────────────────────────
-loadConfig();
-if (cfg) { showConnected(); loadFromGitee(); }
-else { showSetup(); renderCurrentTab(); }
+// 自动使用内置配置连接，无需用户手动操作
+cfg = BUILTIN_CFG;
+showConnected();
+loadFromGitee();
