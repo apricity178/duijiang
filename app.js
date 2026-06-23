@@ -23,6 +23,7 @@ let isSyncing      = false;
 
 // ── Gitee API helpers ────────────────────────────────────
 // Gitee REST API v5: https://gitee.com/api/v5
+// Uses form-urlencoded (simple request, no CORS preflight needed)
 function giteeBase() {
   return `https://gitee.com/api/v5/repos/${cfg.owner}/${cfg.repo}`;
 }
@@ -33,54 +34,58 @@ async function giteeFetch(path, opts = {}) {
   return fetch(url, {
     ...opts,
     headers: {
-      'Content-Type': 'application/json',
       ...(opts.headers || {})
     }
   });
 }
 
+// Encode file path for URL — preserve '/' separators
+function encodePath(filePath) {
+  return filePath.split('/').map(encodeURIComponent).join('/');
+}
+
 // GET file → { content (base64), sha } or null
 async function giteeGetFile(filePath) {
-  const res = await giteeFetch(`/contents/${encodeURIComponent(filePath)}`);
+  const res = await giteeFetch(`/contents/${encodePath(filePath)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Gitee API ${res.status}`);
   return res.json();
 }
 
-// Create or update file
+// Create or update file (uses form data, not JSON — avoids CORS preflight)
 async function giteePutFile(filePath, base64Content, message, sha) {
-  const body = { message, content: base64Content };
-  if (sha) {
-    // update
-    body.sha = sha;
-    const res = await giteeFetch(`/contents/${encodeURIComponent(filePath)}`, {
-      method: 'PUT',
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `Gitee PUT ${res.status}`);
-    }
-    return res.json();
-  } else {
-    // create
-    const res = await giteeFetch(`/contents/${encodeURIComponent(filePath)}`, {
-      method: 'POST',
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `Gitee POST ${res.status}`);
-    }
-    return res.json();
+  const params = new URLSearchParams();
+  params.append('access_token', cfg.token);
+  params.append('content', base64Content);
+  params.append('message', message);
+  if (sha) params.append('sha', sha);
+  params.append('branch', 'master');
+
+  const method = sha ? 'PUT' : 'POST';
+  const res = await fetch(`${giteeBase()}/contents/${encodePath(filePath)}`, {
+    method,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Gitee ${method} ${res.status}`);
   }
+  return res.json();
 }
 
 // Delete file
 async function giteeDeleteFile(filePath, message, sha) {
-  const res = await giteeFetch(`/contents/${encodeURIComponent(filePath)}`, {
+  const params = new URLSearchParams();
+  params.append('access_token', cfg.token);
+  params.append('message', message);
+  params.append('sha', sha);
+  params.append('branch', 'master');
+
+  const res = await fetch(`${giteeBase()}/contents/${encodePath(filePath)}`, {
     method: 'DELETE',
-    body: JSON.stringify({ message, sha })
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString()
   });
   if (!res.ok && res.status !== 404) {
     const err = await res.json().catch(() => ({}));
@@ -332,15 +337,17 @@ btnCreateRepo.addEventListener('click', async () => {
   btnCreateRepo.disabled = true;
   btnCreateRepo.textContent = '⏳ 创建中…';
   try {
-    const res = await fetch(`https://gitee.com/api/v5/user/repos?access_token=${encodeURIComponent(token)}`, {
+    const params = new URLSearchParams();
+    params.append('access_token', token);
+    params.append('name', repoName);
+    params.append('description', '🎫 中奖码管家');
+    params.append('private', 'false');
+    params.append('auto_init', 'true');
+
+    const res = await fetch(`https://gitee.com/api/v5/user/repos`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: repoName,
-        description: '🎫 中奖码管家',
-        private: false,
-        auto_init: true
-      })
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
     });
     if (res.status === 422) {
       showToast(`仓库已存在，直接连接即可`, 'warn');
