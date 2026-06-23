@@ -104,16 +104,18 @@ async function loadFromGitee() {
   try {
     // Load active list
     const indexFile = await giteeGetFile(DATA_FILE);
-    if (indexFile) {
-      qrList = JSON.parse(decodeBase64(indexFile.content));
+    if (indexFile && indexFile.content) {
+      try { qrList = JSON.parse(decodeBase64(indexFile.content)); } catch(e) { qrList = []; }
+      if (!Array.isArray(qrList)) qrList = [];
     } else {
       qrList = [];
     }
 
     // Load trash
     const trashFile = await giteeGetFile(TRASH_FILE);
-    if (trashFile) {
-      trashList = JSON.parse(decodeBase64(trashFile.content));
+    if (trashFile && trashFile.content) {
+      try { trashList = JSON.parse(decodeBase64(trashFile.content)); } catch(e) { trashList = []; }
+      if (!Array.isArray(trashList)) trashList = [];
     } else {
       trashList = [];
     }
@@ -130,6 +132,7 @@ async function loadFromGitee() {
 }
 
 function decodeBase64(b64) {
+  if (!b64) return '{}';
   // Gitee returns base64 with newlines
   return decodeURIComponent(escape(atob(b64.replace(/\n/g, ''))));
 }
