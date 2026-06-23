@@ -309,47 +309,14 @@
 
 <div class="page">
 
-  <!-- Setup -->
-  <div id="setup-section">
-    <p class="section-title">连接 Gitee 存储</p>
-    <div class="setup-panel" id="setup-panel">
-      <h2>⚙️ 配置 Gitee 仓库</h2>
-      <p>
-        二维码内容将<strong>自动解码为文字</strong>后存储到你的 Gitee 仓库，查看时从文字重新生成二维码。<br>
-        无需存储图片文件，速度快且永不出错！<br>
-        需要 Gitee <a href="https://gitee.com/profile/personal_access_tokens" target="_blank">私人令牌</a>，勾选 <strong>projects</strong> + <strong>user_info</strong> 权限。<br>
-        Token 仅保存在本地浏览器，不会上传到任何服务器。
-      </p>
-      <div class="setup-fields">
-        <div class="field-row">
-          <label>GITEE 用户名</label>
-          <input type="text" id="input-owner" value="ad-deficiency-infant-calcium" placeholder="例：your-name" autocomplete="off" spellcheck="false" />
-        </div>
-        <div class="field-row">
-          <label>仓库名</label>
-          <input type="text" id="input-repo" value="duijiang" placeholder="例：my-qrcodes" autocomplete="off" spellcheck="false" />
-        </div>
-        <div class="field-row">
-          <label>私人令牌（TOKEN）</label>
-          <input type="password" id="input-token" placeholder="粘贴你的 Gitee 私人令牌" autocomplete="off" spellcheck="false" />
-        </div>
-      </div>
-      <div class="setup-actions">
-        <button class="btn-primary" id="btn-connect">🔗 连接仓库</button>
-        <button class="btn-ghost btn-sm" id="btn-create-repo">✨ 自动创建仓库</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Connected bar -->
-  <div class="connected-bar hidden" id="connected-bar">
+  <!-- Connected bar (自动连接，无需配置) -->
+  <div class="connected-bar" id="connected-bar">
     <div class="info">
       <div class="dot"></div>
       <span>已连接：</span>
-      <span class="repo-name" id="connected-repo-name"></span>
+      <span class="repo-name" id="connected-repo-name">ad-deficiency-infant-calcium/duijiang</span>
     </div>
-    <div class="sync-status" id="sync-status">✓ 已同步</div>
-    <button class="btn-ghost btn-sm" id="btn-disconnect">断开</button>
+    <div class="sync-status" id="sync-status">⏳ 连接中…</div>
   </div>
 
   <!-- Tabs -->
