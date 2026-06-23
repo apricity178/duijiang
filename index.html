@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🎫 中奖码管家</title>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
 
@@ -170,11 +172,12 @@
   .qr-img-wrap {
     width: 100%; aspect-ratio: 1 / 1; overflow: hidden; background: #faf9f7;
     display: flex; align-items: center; justify-content: center; position: relative;
+    padding: 8px;
   }
-  .qr-img-wrap img { width: 100%; height: 100%; object-fit: contain; transition: filter 0.3s; pointer-events: none; }
-  .qr-card.used .qr-img-wrap img { filter: blur(5px) grayscale(0.8); }
+  .qr-canvas { max-width: 100%; max-height: 100%; transition: filter 0.3s; pointer-events: none; }
+  .qr-card.used .qr-canvas { filter: blur(4px) grayscale(0.7) brightness(1.1); }
 
-  .used-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.38); align-items: center; justify-content: center; }
+  .used-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.38); align-items: center; justify-content: center; border-radius: 0 0 var(--radius) var(--radius); }
   .qr-card.used .used-overlay, .qr-card .trash-badge { display: flex; }
   .used-badge { background: rgba(255,255,255,0.92); color: #7a7068; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px; letter-spacing: 0.04em; }
   .trash-badge { background: rgba(212,167,13,0.9) !important; color: #fff !important; }
@@ -216,15 +219,16 @@
   .nav-btn:not(:disabled):hover { background: var(--border); transform: none; box-shadow: none; }
   .nav-pos { font-size: 13px; color: var(--text-muted); font-weight: 700; min-width: 60px; text-align: center; }
 
-  .modal-qr-wrap { width: 100%; max-width: 280px; margin: 0 auto 16px; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 2px solid var(--border); background: #faf9f7; display: flex; align-items: center; justify-content: center; position: relative; }
-  .modal-qr-wrap img { width: 100%; height: 100%; object-fit: contain; transition: filter 0.3s; pointer-events: none; }
-  .modal-qr-wrap.used img { filter: blur(6px) grayscale(0.8); }
-  .modal-used-badge { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.42); align-items: center; justify-content: center; }
+  .modal-qr-wrap { width: 100%; max-width: 280px; margin: 0 auto 16px; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 2px solid var(--border); background: #fff; display: flex; align-items: center; justify-content: center; position: relative; padding: 12px; }
+  .modal-qr-canvas { max-width: 100%; max-height: 100%; transition: filter 0.3s; pointer-events: none; }
+  .modal-qr-wrap.used .modal-qr-canvas { filter: blur(5px) grayscale(0.7); }
+  .modal-used-badge { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.42); align-items: center; justify-content: center; border-radius: 10px; }
   .modal-qr-wrap.used .modal-used-badge { display: flex; }
   .modal-used-text { background: rgba(255,255,255,0.92); color: #5c5048; font-size: 16px; font-weight: 800; padding: 6px 20px; border-radius: 999px; letter-spacing: 0.08em; }
 
-  .modal-meta { text-align: center; color: var(--text-muted); font-size: 12px; margin-bottom: 16px; line-height: 1.8; }
+  .modal-meta { text-align: center; color: var(--text-muted); font-size: 12px; margin-bottom: 16px; line-height: 1.8; word-break: break-all; }
   .modal-meta strong { color: var(--text); font-size: 14px; font-weight: 700; }
+  .modal-qr-content { font-size: 11px; color: var(--text-muted); background: var(--surface2); padding: 6px 10px; border-radius: 8px; margin-top: 6px; word-break: break-all; line-height: 1.5; max-height: 80px; overflow-y: auto; }
 
   .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .modal-actions button { justify-content: center; }
@@ -311,7 +315,8 @@
     <div class="setup-panel" id="setup-panel">
       <h2>⚙️ 配置 Gitee 仓库</h2>
       <p>
-        二维码图片将存储在你的 <strong>Gitee</strong> 仓库中，国内访问速度快、全端可见。<br>
+        二维码内容将<strong>自动解码为文字</strong>后存储到你的 Gitee 仓库，查看时从文字重新生成二维码。<br>
+        无需存储图片文件，速度快且永不出错！<br>
         需要 Gitee <a href="https://gitee.com/profile/personal_access_tokens" target="_blank">私人令牌</a>，勾选 <strong>projects</strong> + <strong>user_info</strong> 权限。<br>
         Token 仅保存在本地浏览器，不会上传到任何服务器。
       </p>
@@ -367,8 +372,8 @@
       <input type="file" id="file-input" accept="image/*" multiple />
       <span class="upload-icon">📂</span>
       <div class="upload-text">点击或拖拽上传二维码图片</div>
-      <div class="upload-hint">支持 JPG、PNG、WebP，可一次选多张</div>
-      <div class="upload-progress" id="upload-progress">⏫ 正在上传…</div>
+      <div class="upload-hint">上传后自动解码二维码内容并保存文字，查看时重新生成</div>
+      <div class="upload-progress" id="upload-progress">⏫ 正在处理…</div>
     </div>
 
     <div class="action-bar">
@@ -433,7 +438,7 @@
         <button class="nav-btn" id="modal-next" title="下一张">▶</button>
       </div>
       <div class="modal-qr-wrap" id="modal-qr-wrap">
-        <img id="modal-img" src="" alt="二维码" />
+        <canvas class="modal-qr-canvas" id="modal-qr-canvas"></canvas>
         <div class="modal-used-badge">
           <span class="modal-used-text">✓ 已使用</span>
         </div>
