@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎫 中奖码管家</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+  :root {
+    --bg: #faf8f5;
+    --surface: #ffffff;
+    --surface2: #f4f1ec;
+    --border: #e8e2d9;
+    --text: #1a1714;
+    --text-muted: #7a7068;
+    --accent: #d4380d;
+    --accent-light: #fff1ed;
+    --accent2: #389e0d;
+    --gold: #d4a70d;
+    --gold-light: #fffbe6;
+    --radius: 16px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans SC', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: var(--shadow);
+  }
+  .header-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    gap: 12px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .logo-emoji { font-size: 22px; }
+
+  .stats-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .stat-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .stat-chip .num {
+    font-weight: 700;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .stat-chip.warn .num { color: var(--accent); }
+  .stat-chip.ok .num { color: var(--accent2); }
+
+  /* ── Banner ── */
+  .banner {
+    background: linear-gradient(135deg, #fff7e6 0%, #fffbe6 100%);
+    border: 1.5px solid #ffd666;
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: #7c5800;
+    line-height: 1.6;
+  }
+  .banner-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .banner strong { font-weight: 700; color: #ad6800; }
+  .banner.hidden { display: none; }
+
+  /* ── Layout ── */
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px 80px;
+  }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  /* ── Setup Panel ── */
+  .setup-panel {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .setup-panel h2 {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .setup-panel p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    line-height: 1.6;
+  }
+  .setup-panel p a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .setup-panel p a:hover { text-decoration: underline; }
+  .setup-fields {
+    display: grid;
+    gap: 12px;
+  }
+  .field-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .field-row label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+  }
+  .field-row input {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 10px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+  .field-row input:focus { border-color: var(--accent); }
+  .field-row input::placeholder { color: #c0b8b0; }
+  .setup-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .connected-bar {
+    background: #f6ffed;
+    border: 1.5px solid #b7eb8f;
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: #2e6b00;
+    flex-wrap: wrap;
+  }
+  .connected-bar .info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .connected-bar .dot {
+    width: 8px; height: 8px;
+    background: var(--accent2);
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px rgba(56,158,13,0.2);
+  }
+  .connected-bar .repo-name {
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-status {
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sync-status.syncing { color: var(--gold); }
+  .sync-status.error { color: var(--accent); }
+
+  /* ── Upload Zone ── */
+  .upload-card {
+    background: var(--surface);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    margin-bottom: 24px;
+    position: relative;
+  }
+  .upload-card:hover, .upload-card.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+  .upload-card input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-icon { font-size: 36px; margin-bottom: 8px; display: block; }
+  .upload-text { font-size: 14px; font-weight: 500; color: var(--text-muted); }
+  .upload-hint { font-size: 12px; color: #b0a89e; margin-top: 4px; }
+
+  /* upload progress */
+  .upload-progress {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--gold);
+    font-weight: 600;
+    display: none;
+  }
+  .upload-progress.show { display: block; }
+
+  /* ── Action Bar ── */
+  .action-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .action-left {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .action-right {
+    margin-left: auto;
+  }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    outline: none;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    padding: 10px 18px;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover, .btn-primary:active {
+    background: #b7310a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(212,56,13,0.3);
+  }
+  .btn-ghost {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover, .btn-ghost:active { background: var(--border); }
+  .btn-danger {
+    background: #fff1f0;
+    color: #cf1322;
+    border: 1px solid #ffb8b8;
+  }
+  .btn-danger:hover, .btn-danger:active { background: #ffccc7; }
+  .btn-sm {
+    padding: 7px 14px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+
+  .filter-group {
+    display: flex;
+    gap: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+  }
+  .filter-btn {
+    background: transparent;
+    color: var(--text-muted);
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 7px;
+    font-size: 13px;
+    border: none;
+  }
+  .filter-btn.active {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  .filter-btn:hover:not(.active) { background: rgba(0,0,0,0.04); }
+
+  /* ── Grid ── */
+  .qr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+  }
+
+  .qr-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    border: 1.5px solid var(--border);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .qr-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--accent); }
+  .qr-card.used { opacity: 0.7; }
+  .qr-card.used:hover { transform: none; box-shadow: var(--shadow); border-color: var(--border); }
+
+  .qr-img-wrap {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    background: #faf9f7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .qr-img-wrap img {
+    width: 100%; height: 100%; object-fit: contain;
+    transition: filter 0.3s;
+    pointer-events: none;
+  }
+  .qr-card.used .qr-img-wrap img {
+    filter: blur(5px) grayscale(0.8);
+  }
+
+  .used-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.38);
+    align-items: center;
+    justify-content: center;
+  }
+  .qr-card.used .used-overlay { display: flex; }
+  .used-badge {
+    background: rgba(255,255,255,0.92);
+    color: #7a7068;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 999px;
+    letter-spacing: 0.04em;
+  }
+
+  .qr-info {
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .qr-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .qr-mark-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+    flex-shrink: 0;
+    touch-action: manipulation;
+  }
+  .qr-mark-btn.mark-used {
+    background: var(--accent-light);
+    color: var(--accent);
+    border: 1px solid #ffb89a;
+  }
+  .qr-mark-btn.mark-unused {
+    background: var(--surface2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    display: none;
+  }
+  .empty-state.show { display: block; }
+  .empty-state-icon { font-size: 48px; margin-bottom: 14px; opacity: 0.7; }
+  .empty-state p { font-size: 14px; line-height: 1.7; }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,8,6,0.82);
+    z-index: 1000;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 24px 24px 0 0;
+    width: 100%;
+    max-width: 540px;
+    max-height: 96vh;
+    overflow-y: auto;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.3);
+    animation: modalUp 0.32s cubic-bezier(0.34,1.4,0.64,1);
+  }
+  @keyframes modalUp {
+    from { opacity: 0; transform: translateY(60px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @media (min-width: 600px) {
+    .modal-overlay { align-items: center; padding: 20px; }
+    .modal {
+      border-radius: 24px;
+      animation: modalIn 0.3s cubic-bezier(0.34,1.4,0.64,1);
+    }
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.88) translateY(20px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+  }
+
+  .modal-handle {
+    width: 40px; height: 4px;
+    background: var(--border);
+    border-radius: 999px;
+    margin: 12px auto 0;
+  }
+  @media (min-width: 600px) { .modal-handle { display: none; } }
+
+  .modal-header {
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-title {
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .modal-close {
+    background: var(--surface2);
+    border: none;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    font-size: 15px;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    font-weight: 400;
+    touch-action: manipulation;
+  }
+  .modal-close:hover { background: var(--border); transform: none; box-shadow: none; }
+
+  .modal-body { padding: 20px; }
+
+  .modal-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .nav-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    touch-action: manipulation;
+  }
+  .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .nav-btn:not(:disabled):hover { background: var(--border); transform: none; box-shadow: none; }
+  .nav-pos { font-size: 13px; color: var(--text-muted); font-weight: 700; min-width: 60px; text-align: center; }
+
+  .modal-qr-wrap {
+    width: 100%;
+    max-width: 280px;
+    margin: 0 auto 16px;
+    aspect-ratio: 1;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid var(--border);
+    background: #faf9f7;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .modal-qr-wrap img {
+    width: 100%; height: 100%; object-fit: contain;
+    transition: filter 0.3s;
+    pointer-events: none;
+  }
+  .modal-qr-wrap.used img { filter: blur(6px) grayscale(0.8); }
+  .modal-used-badge {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.42);
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-qr-wrap.used .modal-used-badge { display: flex; }
+  .modal-used-text {
+    background: rgba(255,255,255,0.92);
+    color: #5c5048;
+    font-size: 16px;
+    font-weight: 800;
+    padding: 6px 20px;
+    border-radius: 999px;
+    letter-spacing: 0.08em;
+  }
+
+  .modal-meta {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 16px;
+    line-height: 1.8;
+  }
+  .modal-meta strong { color: var(--text); font-size: 14px; font-weight: 700; }
+
+  .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .modal-actions button { justify-content: center; }
+
+  /* ── Confirm Dialog ── */
+  .confirm-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,8,6,0.6);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .confirm-overlay.open { display: flex; }
+  .confirm-box {
+    background: var(--surface);
+    border-radius: 20px;
+    padding: 28px 24px 20px;
+    max-width: 340px;
+    width: 100%;
+    box-shadow: 0 16px 60px rgba(0,0,0,0.3);
+    animation: modalIn 0.25s ease;
+  }
+  .confirm-icon { font-size: 32px; margin-bottom: 12px; display: block; text-align: center; }
+  .confirm-title {
+    font-size: 17px;
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .confirm-msg {
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+  .confirm-btns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .confirm-btns button { justify-content: center; }
+
+  /* ── Toast ── */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+    width: max-content;
+    max-width: calc(100vw - 32px);
+  }
+  .toast {
+    background: #1a1714;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    animation: toastIn 0.3s ease, toastOut 0.3s ease 2.2s forwards;
+    display: flex; align-items: center; gap: 8px;
+    white-space: nowrap;
+  }
+  .toast.success { background: #237804; }
+  .toast.warn    { background: #ad6800; }
+  .toast.error   { background: #a8071a; }
+  @keyframes toastIn  { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+
+  /* ── Highlight ── */
+  .highlight-ring {
+    animation: ringPulse 1.5s ease-in-out 2;
+    border-color: var(--gold) !important;
+    box-shadow: 0 0 0 3px rgba(212,167,13,0.25) !important;
+  }
+  @keyframes ringPulse {
+    0%,100% { box-shadow: 0 0 0 3px rgba(212,167,13,0.25); }
+    50%      { box-shadow: 0 0 0 10px rgba(212,167,13,0); }
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 400px) {
+    .qr-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .action-left { width: 100%; }
+    .action-left button { flex: 1; }
+    .action-right { margin-left: 0; width: 100%; }
+    .filter-group { width: 100%; justify-content: stretch; }
+    .filter-btn { flex: 1; text-align: center; }
+    .setup-fields { grid-template-columns: 1fr; }
+  }
+  @media (min-width: 401px) and (max-width: 600px) {
+    .qr-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+    .action-bar { flex-direction: column; align-items: stretch; }
+    .action-left { width: 100%; }
+    .action-right { margin-left: 0; }
+    .filter-group { width: 100%; }
+    .filter-btn { flex: 1; text-align: center; }
+  }
+  @media (min-width: 601px) and (max-width: 900px) {
+    .qr-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  }
+  @media (min-width: 901px) {
+    .qr-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-emoji">🎫</span>
+      中奖码管家
+    </div>
+    <div class="stats-row">
+      <div class="stat-chip ok">
+        <span>待兑奖</span>
+        <span class="num" id="stat-unused">0</span>
+        <span>张</span>
+      </div>
+      <div class="stat-chip warn">
+        <span>已用</span>
+        <span class="num" id="stat-used">0</span>
+        <span>张</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- GitHub 配置面板 -->
+  <div id="setup-section">
+    <p class="section-title">连接 GitHub 存储</p>
+    <div class="setup-panel" id="setup-panel">
+      <h2>⚙️ 配置 GitHub 仓库</h2>
+      <p>
+        二维码图片将存储在你的 GitHub 仓库中，数据持久且可跨设备访问。<br>
+        需要一个 <a href="https://github.com/settings/tokens/new?scopes=repo&description=%E4%B8%AD%E5%A5%96%E7%A0%81%E7%AE%A1%E5%AE%B6" target="_blank">Personal Access Token（PAT）</a>，勾选 <strong>repo</strong> 权限。
+        Token 仅保存在本地浏览器中，不会上传到任何服务器。
+      </p>
+      <div class="setup-fields">
+        <div class="field-row">
+          <label>GITHUB USERNAME（用户名）</label>
+          <input type="text" id="input-owner" placeholder="例：octocat" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field-row">
+          <label>REPOSITORY NAME（仓库名）</label>
+          <input type="text" id="input-repo" placeholder="例：my-qrcodes" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field-row">
+          <label>PERSONAL ACCESS TOKEN（PAT）</label>
+          <input type="password" id="input-token" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+      <div class="setup-actions">
+        <button class="btn-primary" id="btn-connect">🔗 连接仓库</button>
+        <button class="btn-ghost btn-sm" id="btn-create-repo">✨ 自动创建仓库</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 已连接状态栏 -->
+  <div class="connected-bar hidden" id="connected-bar">
+    <div class="info">
+      <div class="dot"></div>
+      <span>已连接：</span>
+      <span class="repo-name" id="connected-repo-name"></span>
+    </div>
+    <div class="sync-status" id="sync-status">✓ 已同步</div>
+    <button class="btn-ghost btn-sm" id="btn-disconnect">断开</button>
+  </div>
+
+  <div class="banner" id="banner-remind">
+    <span class="banner-icon">⚠️</span>
+    <div>
+      <strong>注意防漏兑奖！</strong>你还有 <strong id="banner-count">0</strong> 张二维码尚未使用，别忘了去兑奖哦！
+    </div>
+  </div>
+
+  <p class="section-title">添加二维码</p>
+  <div class="upload-card" id="upload-zone">
+    <input type="file" id="file-input" accept="image/*" multiple />
+    <span class="upload-icon">📂</span>
+    <div class="upload-text">点击或拖拽上传二维码图片</div>
+    <div class="upload-hint">支持 JPG、PNG、WebP，可一次选多张</div>
+    <div class="upload-progress" id="upload-progress">⏫ 正在上传到 GitHub…</div>
+  </div>
+
+  <div class="action-bar">
+    <div class="action-left">
+      <button class="btn-primary" id="btn-random">🎲 随机抽取</button>
+      <button class="btn-danger" id="btn-clear-used">🗑 清除已使用</button>
+    </div>
+    <div class="action-right">
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="all">全部</button>
+        <button class="filter-btn" data-filter="unused">待兑奖</button>
+        <button class="filter-btn" data-filter="used">已使用</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="section-title">我的二维码</p>
+  <div class="qr-grid" id="qr-grid"></div>
+  <div class="empty-state" id="empty-state">
+    <div class="empty-state-icon">🎟️</div>
+    <p>还没有二维码<br>连接 GitHub 后上传你的中奖码开始管理吧</p>
+  </div>
+
+</div>
+
+<!-- 查看 Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">🎫 查看二维码</div>
+      <button class="modal-close" id="modal-close" title="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-nav">
+        <button class="nav-btn" id="modal-prev" title="上一张">◀</button>
+        <span class="nav-pos" id="modal-pos">1 / 1</span>
+        <button class="nav-btn" id="modal-next" title="下一张">▶</button>
+      </div>
+      <div class="modal-qr-wrap" id="modal-qr-wrap">
+        <img id="modal-img" src="" alt="二维码" />
+        <div class="modal-used-badge">
+          <span class="modal-used-text">✓ 已使用</span>
+        </div>
+      </div>
+      <div class="modal-meta" id="modal-meta"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="modal-mark-btn">✅ 标记已使用</button>
+        <button class="btn-ghost" id="modal-unmark-btn">↩ 取消标记</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 自定义确认弹窗 -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <span class="confirm-icon" id="confirm-icon">🗑</span>
+    <div class="confirm-title" id="confirm-title">确认删除</div>
+    <div class="confirm-msg" id="confirm-msg">此操作不可撤销</div>
+    <div class="confirm-btns">
+      <button class="btn-ghost" id="confirm-cancel">取消</button>
+      <button class="btn-danger" id="confirm-ok">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
