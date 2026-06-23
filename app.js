@@ -1,15 +1,20 @@
 /**
- * 中奖码管家 — app.js (Gitee 存储版)
- * 图片存储在 Gitee 仓库，raw.gitee.com 直链全端可见
- * 删除=软删除进回收站，7天后彻底删除
+ * 中奖码管家 — app.js v3 (纯文本解码版)
+ *
+ * 工作原理：
+ * 1. 上传二维码图片 → jsQR 解码出文字内容
+ * 2. 文字内容存到 Gitee data/index.json（纯文本，几KB）
+ * 3. 查看时用 qrcode-generator 从文字重新绘制二维码到 Canvas
+ * 4. 永不依赖图片文件，永不加载失败，全端同步！
  */
 
 // ── Constants ────────────────────────────────────────────
 const CFG_KEY    = 'qrm_gitee_config';
 const DATA_FILE  = 'data/index.json';
 const TRASH_FILE = 'data/trash.json';
-const IMG_DIR    = 'images';
 const TRASH_DAYS = 7;
+const QR_SIZE    = 5; // qrcode-generator module size (0=auto)
+const QR_EC      = 'M'; // Error correction level: L/M/Q/H
 
 // ── State ────────────────────────────────────────────────
 let cfg = null;          // { owner, repo, token }
@@ -21,9 +26,73 @@ let modalIndex     = -1;
 let modalContext   = 'main';   // which tab the modal opened from
 let isSyncing      = false;
 
+// ── QR Code Generator Helper ─────────────────────────────
+function generateQRCanvas(text, canvas, size) {
+  const cellSize = size || 4;
+  // Determine minimum version needed for the text
+  const qr = qrcode(QR_EC, QR_SIZE);
+  qr.addData(text);
+  qr.make();
+
+  const count = qr.getModuleCount();
+  const canvasSize = Math.min(280, Math.max(120, count * cellSize));
+  canvas.width = canvasSize;
+  canvas.height = canvasSize;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvasSize, canvasSize);
+
+  const modSize = canvasSize / count;
+
+  // Draw white background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+  // Draw black modules
+  ctx.fillStyle = '#000000';
+  for (let r = 0; r < count; r++) {
+    for (let c = 0; c < count; c++) {
+      if (qr.isDark(r, c)) {
+        ctx.fillRect(c * modSize, r * modSize, modSize, modSize);
+      }
+    }
+  }
+
+  return canvas;
+}
+
+// ── QR Code Decoder (jsQR) ────────────────────────────────
+function decodeQRFromImage(imageElement) {
+  return new Promise((resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = imageElement.naturalWidth || imageElement.width || 200;
+      canvas.height = imageElement.naturalHeight || imageElement.height || 200;
+      ctx.drawImage(imageElement, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code && code.data) {
+        resolve(code.data.trim());
+      } else {
+        reject(new Error('无法识别二维码'));
+      }
+    } catch(e) {
+      reject(e);
+    }
+  });
+}
+
+function decodeQRFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => decodeQRFromImage(img).then(resolve).catch(reject);
+    img.onerror = () => reject(new Error('图片加载失败'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 // ── Gitee API helpers ────────────────────────────────────
-// Gitee REST API v5: https://gitee.com/api/v5
-// Uses form-urlencoded (simple request, no CORS preflight needed)
 function giteeBase() {
   return `https://gitee.com/api/v5/repos/${cfg.owner}/${cfg.repo}`;
 }
@@ -31,20 +100,13 @@ function giteeBase() {
 async function giteeFetch(path, opts = {}) {
   const sep = path.includes('?') ? '&' : '?';
   const url = `${giteeBase()}${path}${sep}access_token=${encodeURIComponent(cfg.token)}`;
-  return fetch(url, {
-    ...opts,
-    headers: {
-      ...(opts.headers || {})
-    }
-  });
+  return fetch(url, { ...opts, headers: { ...(opts.headers || {}) } });
 }
 
-// Encode file path for URL — preserve '/' separators
 function encodePath(filePath) {
   return filePath.split('/').map(encodeURIComponent).join('/');
 }
 
-// GET file → { content (base64), sha } or null
 async function giteeGetFile(filePath) {
   const res = await giteeFetch(`/contents/${encodePath(filePath)}`);
   if (res.status === 404) return null;
@@ -52,7 +114,6 @@ async function giteeGetFile(filePath) {
   return res.json();
 }
 
-// Create or update file (uses form data, not JSON — avoids CORS preflight)
 async function giteePutFile(filePath, base64Content, message, sha) {
   const params = new URLSearchParams();
   params.append('access_token', cfg.token);
@@ -74,7 +135,6 @@ async function giteePutFile(filePath, base64Content, message, sha) {
   return res.json();
 }
 
-// Delete file
 async function giteeDeleteFile(filePath, message, sha) {
   const params = new URLSearchParams();
   params.append('access_token', cfg.token);
@@ -93,16 +153,10 @@ async function giteeDeleteFile(filePath, message, sha) {
   }
 }
 
-// Build public raw image URL (no auth required, cross-device)
-function rawUrl(filePath) {
-  return `https://gitee.com/${cfg.owner}/${cfg.repo}/raw/master/${filePath}`;
-}
-
 // ── Data Sync ────────────────────────────────────────────
 async function loadFromGitee() {
   setSyncStatus('syncing', '⏳ 加载中…');
   try {
-    // Load active list
     const indexFile = await giteeGetFile(DATA_FILE);
     if (indexFile && indexFile.content) {
       try { qrList = JSON.parse(decodeBase64(indexFile.content)); } catch(e) { qrList = []; }
@@ -111,7 +165,6 @@ async function loadFromGitee() {
       qrList = [];
     }
 
-    // Load trash
     const trashFile = await giteeGetFile(TRASH_FILE);
     if (trashFile && trashFile.content) {
       try { trashList = JSON.parse(decodeBase64(trashFile.content)); } catch(e) { trashList = []; }
@@ -120,9 +173,7 @@ async function loadFromGitee() {
       trashList = [];
     }
 
-    // Auto-purge expired trash (>7 days)
     await autoPurgeTrash();
-
     setSyncStatus('ok', '✓ 已同步');
     renderCurrentTab();
   } catch(e) {
@@ -133,7 +184,6 @@ async function loadFromGitee() {
 
 function decodeBase64(b64) {
   if (!b64) return '{}';
-  // Gitee returns base64 with newlines
   return decodeURIComponent(escape(atob(b64.replace(/\n/g, ''))));
 }
 
@@ -147,7 +197,7 @@ async function saveIndexToGitee() {
   setSyncStatus('syncing', '⏫ 保存中…');
   try {
     const meta = qrList.map(q => ({
-      id: q.id, name: q.name, path: q.path,
+      id: q.id, name: q.name, content: q.content,
       used: q.used, addedAt: q.addedAt, usedAt: q.usedAt || null
     }));
     const content = encodeToBase64(JSON.stringify(meta, null, 2));
@@ -177,16 +227,6 @@ async function autoPurgeTrash() {
   });
   if (!expired.length) return;
 
-  // Physically delete expired image files
-  for (const item of expired) {
-    if (item.path) {
-      try {
-        const f = await giteeGetFile(item.path);
-        if (f) await giteeDeleteFile(item.path, `♻️ purge expired ${item.path}`, f.sha);
-      } catch(e) { /* ignore */ }
-    }
-  }
-
   trashList = trashList.filter(q => {
     const deletedMs = new Date(q.deletedAt).getTime();
     return (now - deletedMs) < TRASH_DAYS * 24 * 3600 * 1000;
@@ -196,10 +236,7 @@ async function autoPurgeTrash() {
 
 // ── Config ───────────────────────────────────────────────
 function loadConfig() {
-  try {
-    const raw = localStorage.getItem(CFG_KEY);
-    if (raw) cfg = JSON.parse(raw);
-  } catch(e) { cfg = null; }
+  try { const raw = localStorage.getItem(CFG_KEY); if (raw) cfg = JSON.parse(raw); } catch(e) { cfg = null; }
 }
 function saveConfig() { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }
 function clearConfig() { localStorage.removeItem(CFG_KEY); cfg = null; }
@@ -226,7 +263,7 @@ const btnDisconnect    = document.getElementById('btn-disconnect');
 
 const modalOverlay     = document.getElementById('modal-overlay');
 const modalClose       = document.getElementById('modal-close');
-const modalImg         = document.getElementById('modal-img');
+const modalQrCanvas    = document.getElementById('modal-qr-canvas');
 const modalQrWrap      = document.getElementById('modal-qr-wrap');
 const modalMeta        = document.getElementById('modal-meta');
 const modalMarkBtn     = document.getElementById('modal-mark-btn');
@@ -331,7 +368,6 @@ btnConnect.addEventListener('click', async () => {
   }
 });
 
-// Create repo via Gitee API
 btnCreateRepo.addEventListener('click', async () => {
   const token = inputToken.value.trim();
   const repoName = inputRepo.value.trim() || 'my-qrcodes';
@@ -343,7 +379,7 @@ btnCreateRepo.addEventListener('click', async () => {
     const params = new URLSearchParams();
     params.append('access_token', token);
     params.append('name', repoName);
-    params.append('description', '🎫 中奖码管家');
+    params.append('description', '🎫 中奖码管家 — 二维码内容文本存储');
     params.append('private', 'false');
     params.append('auto_init', 'true');
 
@@ -378,7 +414,7 @@ btnDisconnect.addEventListener('click', async () => {
   renderCurrentTab(); showSetup(); showToast('已断开连接');
 });
 
-// ── Upload ────────────────────────────────────────────────
+// ── Upload & Decode ──────────────────────────────────────
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
 uploadZone.addEventListener('drop', e => {
@@ -394,72 +430,45 @@ async function handleFiles(files) {
 
   uploadProgress.classList.add('show');
   let succeeded = 0;
+  let failedDecode = 0;
 
   for (let i = 0; i < imgFiles.length; i++) {
     const file = imgFiles[i];
-    uploadProgress.textContent = `⏫ 上传中 (${i + 1}/${imgFiles.length})：${file.name}`;
+    uploadProgress.textContent = `🔍 解码中 (${i + 1}/${imgFiles.length})：${file.name}`;
     try {
-      const { path } = await uploadImageToGitee(file);
+      const content = await decodeQRFromFile(file);
+      if (!content) { failedDecode++; continue; }
+
+      // Check duplicate
+      if (qrList.some(q => q.content === content)) {
+        showToast(`已跳过重复二维码：${file.name}`, 'warn');
+        continue;
+      }
+
       qrList.unshift({
         id: Date.now() + '_' + Math.random().toString(36).slice(2),
         name: file.name,
-        path,
-        url: rawUrl(path),
+        content: content,
         used: false,
         addedAt: new Date().toLocaleString('zh-CN'),
         usedAt: null
       });
       succeeded++;
     } catch(e) {
-      showToast(`上传失败：${file.name} — ${e.message}`, 'error');
+      failedDecode++;
+      showToast(`解码失败：${file.name} — ` + (e.message || '不是有效的二维码'), 'error');
     }
   }
 
   uploadProgress.classList.remove('show');
+
   if (succeeded > 0) {
     await saveIndexToGitee();
     renderGrid();
-    showToast(`✅ 已上传 ${succeeded} 张到 Gitee`, 'success');
+    showToast(`✅ 成功添加 ${succeeded} 张二维码${failedDecode > 0 ? `（${failedDecode} 张无法识别）` : ''}`, 'success');
+  } else if (failedDecode > 0) {
+    showToast(`${failedDecode} 张图片均无法识别为二维码`, 'error');
   }
-}
-
-async function uploadImageToGitee(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async e => {
-      try {
-        const base64 = e.target.result.split(',')[1];
-        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-        const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const filePath = `${IMG_DIR}/${filename}`;
-        await giteePutFile(filePath, base64, `📷 add ${filename}`, null);
-        resolve({ path: filePath });
-      } catch(err) { reject(err); }
-    };
-    reader.onerror = () => reject(new Error('文件读取失败'));
-    reader.readAsDataURL(file);
-  });
-}
-
-// ── Image URL helper ─────────────────────────────────────
-function resolveImgUrl(qr) {
-  if (qr.path && cfg) return rawUrl(qr.path);
-  return qr.url || qr.dataUrl || '';
-}
-
-// ── Filter ────────────────────────────────────────────────
-filterBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    filterBtns.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentFilter = btn.dataset.filter;
-    renderGrid();
-  });
-});
-function getFiltered() {
-  if (currentFilter === 'unused') return qrList.filter(q => !q.used);
-  if (currentFilter === 'used')   return qrList.filter(q =>  q.used);
-  return [...qrList];
 }
 
 // ── Render: Main Grid ─────────────────────────────────────
@@ -475,14 +484,9 @@ function renderGrid() {
     card.className = 'qr-card' + (qr.used ? ' used' : '');
     card.dataset.id = qr.id;
 
-    const imgSrc = resolveImgUrl(qr);
     card.innerHTML = `
       <div class="qr-img-wrap">
-        <img src="${escAttr(imgSrc)}" alt="${escAttr(qr.name)}" loading="lazy"
-          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
-        <div class="img-fallback" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:4px;color:#b0a89e;font-size:11px;background:#faf9f7;">
-          <span style="font-size:28px">⏳</span><span>加载中…</span>
-        </div>
+        <canvas class="qr-canvas"></canvas>
         <div class="used-overlay"><span class="used-badge">✓ 已使用</span></div>
       </div>
       <div class="qr-info">
@@ -496,6 +500,10 @@ function renderGrid() {
         </span>
       </div>
     `;
+
+    // Generate QR code on canvas
+    const canvas = card.querySelector('.qr-canvas');
+    generateQRCanvas(qr.content, canvas, 3);
 
     card.querySelector('.qr-img-wrap').addEventListener('click', () => { modalContext = 'main'; openModal(idx); });
     card.querySelector('.qr-name').addEventListener('click', () => { modalContext = 'main'; openModal(idx); });
@@ -517,18 +525,13 @@ function renderTrash() {
     card.className = 'qr-card used';
     card.dataset.id = qr.id;
 
-    const imgSrc = resolveImgUrl(qr);
     const deletedAt = qr.deletedAt ? new Date(qr.deletedAt) : null;
     const expireDate = deletedAt ? new Date(deletedAt.getTime() + TRASH_DAYS * 86400000) : null;
     const daysLeft = expireDate ? Math.max(0, Math.ceil((expireDate - Date.now()) / 86400000)) : '?';
 
     card.innerHTML = `
       <div class="qr-img-wrap">
-        <img src="${escAttr(imgSrc)}" alt="${escAttr(qr.name)}" loading="lazy"
-          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
-        <div class="img-fallback" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:4px;color:#b0a89e;font-size:11px;background:#faf9f7;">
-          <span style="font-size:28px">⏳</span><span>加载中…</span>
-        </div>
+        <canvas class="qr-canvas"></canvas>
         <div class="used-overlay"><span class="used-badge trash-badge">${daysLeft}天后删除</span></div>
       </div>
       <div class="qr-info">
@@ -539,6 +542,8 @@ function renderTrash() {
         </span>
       </div>
     `;
+
+    if (qr.content) generateQRCanvas(qr.content, card.querySelector('.qr-canvas'), 3);
 
     card.querySelector('.qr-img-wrap').addEventListener('click', () => { modalContext = 'trash'; openTrashModal(idx); });
     card.querySelector('.restore-btn').addEventListener('click', e => { e.stopPropagation(); restoreQR(qr.id); });
@@ -556,6 +561,7 @@ function updateStats() {
   statTrash.textContent  = trashList.length;
   bannerRemind.classList.toggle('hidden', unused === 0);
   bannerCount.textContent = unused;
+  document.getElementById('tab-trash-badge').textContent = trashList.length;
 }
 
 // ── Toggle Used ────────────────────────────────────────────
@@ -582,7 +588,6 @@ async function deleteQR(id) {
   const ok = await showConfirm('🗑', '移入回收站', `"${shortenName(item.name)}" 将移入回收站，${TRASH_DAYS}天后自动彻底删除。`, '确认删除');
   if (!ok) return;
 
-  // Move to trash
   item.deletedAt = new Date().toISOString();
   trashList.unshift(item);
   qrList = qrList.filter(q => q.id !== id);
@@ -607,9 +612,8 @@ async function restoreQR(id) {
   const item = trashList.find(q => q.id === id);
   if (!item) return;
 
-  // Remove deletedAt, restore to active
   delete item.deletedAt;
-  item.used = false; item.usedAt = null; // reset used state on restore
+  item.used = false; item.usedAt = null;
   qrList.unshift(item);
   trashList = trashList.filter(q => q.id !== id);
 
@@ -632,23 +636,11 @@ async function restoreQR(id) {
 async function permanentDelete(id) {
   const item = trashList.find(q => q.id === id);
   if (!item) return;
-  const ok = await showConfirm('⚠️', '彻底删除', `"${shortenName(item.name)}" 将从 Gitee 永久删除，无法恢复！`, '彻底删除');
+  const ok = await showConfirm('⚠️', '彻底删除', `"${shortenName(item.name)"} 将被永久删除，无法恢复！`, '彻底删除');
   if (!ok) return;
 
   trashList = trashList.filter(q => q.id !== id);
-
-  try {
-    setSyncStatus('syncing', '⏳ 删除中…');
-    if (item.path) {
-      const f = await giteeGetFile(item.path);
-      if (f) await giteeDeleteFile(item.path, `♻️ perm delete ${item.path}`, f.sha);
-    }
-    await saveTrashToGitee();
-    setSyncStatus('ok', '✓ 已同步');
-  } catch(e) {
-    showToast('删除失败：' + e.message, 'error');
-  }
-
+  try { await saveTrashToGitee(); } catch(e) {}
   renderTrash();
   showToast('♻️ 已彻底删除', 'success');
 }
@@ -656,20 +648,12 @@ async function permanentDelete(id) {
 // ── Empty trash ───────────────────────────────────────────
 btnEmptyTrash.addEventListener('click', async () => {
   if (!trashList.length) { showToast('回收站已空', 'warn'); return; }
-  const ok = await showConfirm('⚠️', '清空回收站', `将永久删除回收站内全部 ${trashList.length} 张图片，无法恢复！`, '清空回收站');
+  const ok = await showConfirm('⚠️', '清空回收站', `将永久删除回收站内全部 ${trashList.length} 张记录，无法恢复！`, '清空回收站');
   if (!ok) return;
 
   setSyncStatus('syncing', '⏳ 清空中…');
-  for (const item of trashList) {
-    if (item.path) {
-      try {
-        const f = await giteeGetFile(item.path);
-        if (f) await giteeDeleteFile(item.path, `♻️ purge ${item.path}`, f.sha);
-      } catch(e) { /* skip */ }
-    }
-  }
   trashList = [];
-  await saveTrashToGitee();
+  try { await saveTrashToGitee(); } catch(e) {}
   setSyncStatus('ok', '✓ 已同步');
   renderTrash();
   showToast('♻️ 回收站已清空', 'success');
@@ -698,7 +682,7 @@ btnRandom.addEventListener('click', () => {
   }, 100);
 });
 
-// ── Delete used button (move all used to trash) ───────────
+// ── Delete used button ────────────────────────────────────
 btnDelete.addEventListener('click', async () => {
   const usedItems = qrList.filter(q => q.used);
   if (!usedItems.length) { showToast('没有已使用的二维码', 'warn'); return; }
@@ -745,9 +729,8 @@ function renderModal() {
   const qr = list[modalIndex];
   if (!qr) return;
 
-  const imgSrc = resolveImgUrl(qr);
-  modalImg.src  = imgSrc;
-  modalImg.alt  = qr.name;
+  // Generate QR code on modal canvas
+  generateQRCanvas(qr.content, modalQrCanvas, 4);
 
   const isTrash = modalContext === 'trash';
   modalTitle.textContent = isTrash ? '🗑 回收站' : (qr.used ? '🔒 已使用' : '🎫 查看二维码');
@@ -763,7 +746,12 @@ function renderModal() {
   const trashLine = isTrash && qr.deletedAt
     ? `<br>删除时间：${new Date(qr.deletedAt).toLocaleString('zh-CN')}`
     : '';
-  modalMeta.innerHTML = `<strong>${escAttr(qr.name)}</strong><br>上传时间：${qr.addedAt}${usedLine}${trashLine}`;
+  const contentPreview = qr.content
+    ? `<div class="modal-qr-content">📋 内容：${escAttr(qr.content)}</div>`
+    : '';
+
+  modalMeta.innerHTML =
+    `<strong>${escAttr(qr.name)}</strong><br>上传时间：${qr.addedAt}${usedLine}${trashLine}${contentPreview}`;
 
   modalPos.textContent = `${modalIndex + 1} / ${list.length}`;
   modalPrev.disabled = (modalIndex === 0);
@@ -861,6 +849,21 @@ function shortenName(name) {
   if (!name) return '未命名';
   const noExt = name.replace(/\.[^.]+$/, '');
   return noExt.length > 10 ? noExt.slice(0, 10) + '…' : noExt;
+}
+
+// ── Filter ────────────────────────────────────────────────
+filterBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    filterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    renderGrid();
+  });
+});
+function getFiltered() {
+  if (currentFilter === 'unused') return qrList.filter(q => !q.used);
+  if (currentFilter === 'used')   return qrList.filter(q =>  q.used);
+  return [...qrList];
 }
 
 // ── Init ──────────────────────────────────────────────────
