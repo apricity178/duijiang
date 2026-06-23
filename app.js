@@ -138,9 +138,9 @@ async function uploadImageToGitHub(file) {
 
         await ghPutFile(filePath, base64, `📷 add ${filename}`);
 
-        // Raw URL for GitHub Pages or raw.githubusercontent.com
-        const rawUrl = `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/main/${filePath}`;
-        resolve({ path: filePath, url: rawUrl });
+        // Use GitHub Pages URL (better accessibility in China) with raw fallback
+        const pagesUrl = `https://${cfg.owner}.github.io/${cfg.repo}/${filePath}`;
+        resolve({ path: filePath, url: pagesUrl });
       } catch(err) {
         reject(err);
       }
@@ -408,6 +408,24 @@ function getFiltered() {
   return [...qrList];
 }
 
+// ── Image URL helper ───────────────────────────────────────
+// Prefer GitHub Pages URL (accessible in China); auto-fix raw.githubusercontent.com URLs
+function resolveImgUrl(qr) {
+  if (!qr.path) return qr.url || qr.dataUrl || '';
+  // Always build Pages URL from path + current config
+  if (cfg && cfg.owner && cfg.repo) {
+    return `https://${cfg.owner}.github.io/${cfg.repo}/${qr.path}`;
+  }
+  // Fallback: convert raw URL or use whatever is stored
+  if (qr.url) {
+    return qr.url.replace(
+      /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/[^/]+\//,
+      `https://$1.github.io/$2/`
+    );
+  }
+  return qr.dataUrl || '';
+}
+
 // ── Render Grid ────────────────────────────────────────────
 function renderGrid() {
   const list = getFiltered();
@@ -425,12 +443,16 @@ function renderGrid() {
     card.className = 'qr-card' + (qr.used ? ' used' : '');
     card.dataset.id = qr.id;
 
-    // Use url (GitHub raw) if available, fallback to dataUrl
-    const imgSrc = qr.url || qr.dataUrl || '';
+    const imgSrc = resolveImgUrl(qr);
 
     card.innerHTML = `
       <div class="qr-img-wrap">
-        <img src="${escAttr(imgSrc)}" alt="${escAttr(qr.name)}" loading="lazy" />
+        <img src="${escAttr(imgSrc)}" alt="${escAttr(qr.name)}" loading="lazy"
+          onerror="this.style.display='none';this.parentNode.querySelector('.img-fallback').style.display='flex'" />
+        <div class="img-fallback" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:4px;color:#b0a89e;font-size:11px;">
+          <span style="font-size:28px">🖼️</span>
+          <span>图片加载中…</span>
+        </div>
         <div class="used-overlay">
           <span class="used-badge">✓ 已使用</span>
         </div>
@@ -571,7 +593,7 @@ function renderModal() {
   const qr = list[modalIndex];
   if (!qr) return;
 
-  const imgSrc = qr.url || qr.dataUrl || '';
+  const imgSrc = resolveImgUrl(qr);
   modalImg.src = imgSrc;
   modalImg.alt = qr.name;
   modalTitle.textContent = qr.used ? '🔒 已使用' : '🎫 查看二维码';
